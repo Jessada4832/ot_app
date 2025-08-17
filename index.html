@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="th" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OT Web App — Daily Input (Dark)</title>
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js + plugins -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+</head>
+<body class="bg-slate-900 text-slate-100">
+  <div class="max-w-6xl mx-auto p-4 md:p-6">
+    <header class="mb-6">
+      <h1 class="text-2xl md:text-3xl font-bold">OT Web App — Daily Report</h1>
+      <p class="text-sm text-slate-400">กรอกเวลาเริ่ม–เสร็จงานรายวัน • คำนวณ OT อัตโนมัติ (ปกติ 08:00–17:00 = 9 ชม.)</p>
+    </header>
+
+    <!-- Controls -->
+    <section class="bg-slate-800/70 rounded-2xl border border-slate-700 p-4 md:p-6 mb-6">
+      <div class="grid grid-cols-12 gap-4 items-end">
+        <div class="col-span-6 sm:col-span-2">
+          <label class="block text-sm mb-1 text-slate-300">เดือน</label>
+          <select id="month" class="w-full rounded-lg border-slate-600 bg-slate-900 text-slate-100 focus:border-indigo-400 focus:ring-indigo-400">
+            <option value="1">ม.ค.</option><option value="2">ก.พ.</option><option value="3">มี.ค.</option>
+            <option value="4">เม.ย.</option><option value="5">พ.ค.</option><option value="6">มิ.ย.</option>
+            <option value="7">ก.ค.</option><option value="8" selected>ส.ค.</option><option value="9">ก.ย.</option>
+            <option value="10">ต.ค.</option><option value="11">พ.ย.</option><option value="12">ธ.ค.</option>
+          </select>
+        </div>
+        <div class="col-span-6 sm:col-span-2">
+          <label class="block text-sm mb-1 text-slate-300">วัน</label>
+          <input id="day" type="number" min="1" max="31" value="1"
+                 class="w-full rounded-lg border-slate-600 bg-slate-900 text-slate-100 focus:border-indigo-400 focus:ring-indigo-400"/>
+        </div>
+        <div class="col-span-6 sm:col-span-3">
+          <label class="block text-sm mb-1 text-slate-300">Start (เช่น 08:00)</label>
+          <input id="start" type="time" value="08:00"
+                 class="w-full rounded-lg border-slate-600 bg-slate-900 text-slate-100 focus:border-indigo-400 focus:ring-indigo-400"/>
+        </div>
+        <div class="col-span-6 sm:col-span-3">
+          <label class="block text-sm mb-1 text-slate-300">End (เช่น 17:00)</label>
+          <input id="end" type="time" value="17:00"
+                 class="w-full rounded-lg border-slate-600 bg-slate-900 text-slate-100 focus:border-indigo-400 focus:ring-indigo-400"/>
+        </div>
+        <div class="col-span-12 sm:col-span-2 flex gap-2">
+          <button id="addBtn"   class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 w-full">Add</button>
+        </div>
+      </div>
+      <div class="mt-3 text-xs text-slate-400">* ถ้าเลิกงานข้ามเที่ยงคืน ให้ใส่ End &lt; Start ได้ ระบบจะคิดข้ามวันให้ (ใช้ MOD 24 ชม.)</div>
+    </section>
+
+    <div class="grid grid-cols-12 gap-6">
+      <!-- Entries table -->
+      <section class="col-span-12 lg:col-span-7 bg-slate-800/70 rounded-2xl border border-slate-700 p-4 md:p-6">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-lg font-semibold">Daily Entries</h2>
+          <div class="flex gap-2">
+            <button id="clearMonth" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">Clear เดือนนี้</button>
+            <button id="csvBtn" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-xs">Export CSV</button>
+          </div>
+        </div>
+        <div class="overflow-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-slate-300">
+                <th class="py-2 pr-3">วันที่</th>
+                <th class="py-2 pr-3">สัปดาห์</th>
+                <th class="py-2 pr-3">Start</th>
+                <th class="py-2 pr-3">End</th>
+                <th class="py-2 pr-3">Work (h)</th>
+                <th class="py-2 pr-3">OT (h)</th>
+                <th class="py-2 pr-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="entriesBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Weekly totals + chart -->
+      <section class="col-span-12 lg:col-span-5 space-y-6">
+        <div class="bg-slate-800/70 rounded-2xl border border-slate-700 p-4 md:p-6">
+          <h2 class="text-lg font-semibold mb-3">Weekly Totals</h2>
+          <div id="weeklyTotals" class="space-y-2"></div>
+          <div class="mt-4 border-t border-slate-700 pt-3 flex items-center justify-between">
+            <div class="text-slate-300 font-medium">Total OT (Month)</div>
+            <div id="totalLabel" class="font-semibold">0.00 h</div>
+          </div>
+        </div>
+
+        <div class="bg-slate-800/70 rounded-2xl border border-slate-700 p-4 md:p-6">
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="text-lg font-semibold">Weekly OT Chart</h2>
+            <div class="text-xs text-slate-400">เส้นแดง = 24 ชม./สัปดาห์</div>
+          </div>
+          <div class="h-72"><canvas id="chart"></canvas></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    // ===== Config & State =====
+    const YEAR = 2025;
+    let entries = []; // {id, day, start, end, work, ot, week}
+    let rowId = 1;
+    const weekly = {1:0,2:0,3:0,4:0,5:0,6:0};
+
+    const monthSel = document.getElementById('month');
+
+    // ===== Utilities =====
+    const fmt = n => (Math.round(n*100)/100).toFixed(2);
+    const statusColor = v => v>24 ? "text-red-400" : "text-emerald-300";
+
+    function storageKey(){
+      const m = String(parseInt(monthSel.value,10)).padStart(2,'0');
+      return `ot_daily_${YEAR}-${m}`;
+    }
+    function saveState(){
+      localStorage.setItem(storageKey(), JSON.stringify(entries));
+    }
+    function loadState(){
+      const raw = localStorage.getItem(storageKey());
+      entries = raw ? JSON.parse(raw) : [];
+      rebuildWeekly();
+    }
+
+    function parseTimeToHours(hhmm){ // '08:30' -> 8.5
+      const [h,m] = hhmm.split(':').map(Number);
+      return h + (m||0)/60;
+    }
+    function calcWorkHours(startStr, endStr){
+      const s = parseTimeToHours(startStr);
+      const e = parseTimeToHours(endStr);
+      let diff = e - s;
+      if (diff < 0) diff += 24; // cross-midnight
+      return diff;
+    }
+    // week number within month (Sunday start)
+    function weekOfMonth(year, month, day){
+      const first = new Date(year, month-1, 1);
+      const firstDow = first.getDay(); // 0=Sun
+      return Math.floor((day + firstDow - 1) / 7) + 1;
+    }
+
+    function rebuildWeekly(){
+      for(let i=1;i<=6;i++) weekly[i]=0;
+      entries.forEach(e => weekly[e.week] += e.ot);
+    }
+
+    // ===== Rendering =====
+    function renderEntries(){
+      const body = document.getElementById("entriesBody");
+      body.innerHTML = "";
+      const m = parseInt(monthSel.value,10);
+      // sort by day asc
+      const sorted = [...entries].sort((a,b)=>a.day-b.day);
+      sorted.forEach(e=>{
+        const tr = document.createElement("tr");
+        tr.className = "border-b border-slate-700";
+        tr.innerHTML = `
+          <td class="py-2 pr-3">${String(e.day).padStart(2,'0')}/${String(m).padStart(2,'0')}/${YEAR}</td>
+          <td class="py-2 pr-3">W${e.week}</td>
+          <td class="py-2 pr-3">${e.start}</td>
+          <td class="py-2 pr-3">${e.end}</td>
+          <td class="py-2 pr-3">${fmt(e.work)}</td>
+          <td class="py-2 pr-3 ${e.ot>0?'text-rose-400':'text-emerald-300'}">${fmt(e.ot)}</td>
+          <td class="py-2 pr-3 text-right">
+            <button class="text-rose-400 hover:text-rose-300 underline text-xs" data-id="${e.id}">Delete</button>
+          </td>`;
+        body.appendChild(tr);
+      });
+    }
+
+    function renderTotals(){
+      const wrap = document.getElementById("weeklyTotals");
+      wrap.innerHTML = "";
+      let total = 0;
+      for(let w=1; w<=6; w++){
+        total += weekly[w];
+        const row = document.createElement("div");
+        row.className = "flex items-center justify-between border-b border-slate-700 pb-1";
+        row.innerHTML = `<div>Week ${w}</div>
+          <div class="font-medium ${statusColor(weekly[w])}">${fmt(weekly[w])} h</div>`;
+        wrap.appendChild(row);
+      }
+      document.getElementById("totalLabel").textContent = fmt(total) + " h";
+    }
+
+    // ===== Chart =====
+    let chart;
+    function yMax(){
+      const maxVal = Math.max(24, ...Object.values(weekly));
+      const step = 6, target = Math.ceil((maxVal+2)/step)*step;
+      return Math.max(30, target);
+    }
+    function buildChart(){
+      const ctx = document.getElementById("chart");
+      const labels = [1,2,3,4,5,6].map(n=>"Week "+n);
+      const data = [1,2,3,4,5,6].map(w=>weekly[w]);
+      if(chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            label: "Weekly OT",
+            data,
+            borderColor: "#475569",
+            backgroundColor: data.map(v => v>24 ? "#fb7185" : "#22c55e"),
+            borderWidth: 1,
+            borderRadius: 8,
+            barPercentage: 0.65,
+            categoryPercentage: 0.6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: yMax(),
+              ticks: { stepSize: 6, color: "#cbd5e1" },
+              grid: { color: "rgba(203,213,225,0.08)" },
+              title: { display: true, text: "Hours", color: "#cbd5e1" }
+            },
+            x: { ticks:{ color:"#cbd5e1" }, grid: { display: false } }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: "rgba(15,23,42,0.95)",
+              titleColor: "#e2e8f0",
+              bodyColor: "#e2e8f0",
+              callbacks: { label: ctx => ` ${fmt(ctx.parsed.y)} h` }
+            },
+            datalabels: {
+              anchor: "end", align: "end", offset: 4, color: "#e2e8f0",
+              formatter: v => `${fmt(v)}h`
+            },
+            annotation: {
+              annotations: {
+                limit24: {
+                  type: "line", yMin: 24, yMax: 24,
+                  borderColor: "#ef4444", borderDash: [6,6], borderWidth: 2,
+                  label: {
+                    display: true, backgroundColor: "rgba(239,68,68,0.15)",
+                    color: "#fecaca", content: ["24h limit"], position: "start", yAdjust: -8
+                  }
+                }
+              }
+            }
+          }
+        },
+        plugins: [ChartDataLabels]
+      });
+    }
+
+    function refresh(){ renderEntries(); renderTotals(); buildChart(); saveState(); }
+
+    // ===== Events =====
+    document.getElementById("addBtn").addEventListener("click", ()=>{
+      const m = parseInt(monthSel.value,10);
+      const day = parseInt(document.getElementById("day").value,10);
+      const start = document.getElementById("start").value;
+      const end   = document.getElementById("end").value;
+
+      if(!day || day<1 || day>31){ alert("กรุณากรอกวัน 1–31"); return; }
+      if(!start || !end){ alert("กรุณากรอกเวลา Start และ End"); return; }
+
+      const work = calcWorkHours(start, end);
+      const ot = Math.max(0, work - 9); // เกิน 9 ชม./วันเป็น OT
+      const week = weekOfMonth(YEAR, m, day);
+
+      entries.push({ id: rowId++, day, start, end, work, ot, week });
+      rebuildWeekly();
+      refresh();
+    });
+
+    document.getElementById("entriesBody").addEventListener("click", (e)=>{
+      if(e.target.tagName === "BUTTON"){
+        const id = parseInt(e.target.dataset.id,10);
+        const idx = entries.findIndex(x=>x.id===id);
+        if(idx>=0){ entries.splice(idx,1); rebuildWeekly(); refresh(); }
+      }
+    });
+
+    document.getElementById("clearMonth").addEventListener("click", ()=>{
+      if(!confirm("ล้างข้อมูลเดือนนี้ทั้งหมด?")) return;
+      entries = []; rebuildWeekly(); refresh();
+    });
+
+    document.getElementById("csvBtn").addEventListener("click", ()=>{
+      const m = String(parseInt(monthSel.value,10)).padStart(2,'0');
+      const rows = [["Date","Week","Start","End","Work(h)","OT(h)"]];
+      entries.sort((a,b)=>a.day-b.day).forEach(e=>{
+        rows.push([`${YEAR}-${m}-${String(e.day).padStart(2,'0')}`, e.week, e.start, e.end, fmt(e.work), fmt(e.ot)]);
+      });
+      const blob = new Blob([rows.map(r=>r.join(",")).join("\n")], {type:"text/csv;charset=utf-8;"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = `ot_daily_${YEAR}-${m}.csv`; a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    monthSel.addEventListener('change', ()=>{ loadState(); refresh(); });
+
+    // init
+    loadState(); refresh();
+  </script>
+</body>
+</html>
