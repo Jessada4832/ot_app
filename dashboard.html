@@ -13,7 +13,7 @@
   <div class="max-w-6xl mx-auto p-4 md:p-6">
     <header class="mb-6">
       <h1 class="text-2xl md:text-3xl font-bold">OT Web App — Daily Input</h1>
-      <p class="text-sm text-slate-400">กรอกเวลาเริ่ม–เสร็จงานรายวัน • OT วันปกติ = Work−9 | วันหยุด = Work−พัก</p>
+      <p class="text-sm text-slate-400">กรอกเวลาเริ่ม–เสร็จงานรายวัน • OT วันปกติ = Work−9 | วันหยุด = Work−พัก (ติ๊กอัตโนมัติถ้าวันอาทิตย์)</p>
     </header>
 
     <!-- Controls -->
@@ -32,6 +32,7 @@
           <label class="block text-sm mb-1 text-slate-300">วัน</label>
           <input id="day" type="number" min="1" max="31" value="1"
                  class="w-full rounded-lg border-slate-600 bg-slate-900 text-slate-100 focus:border-indigo-400 focus:ring-indigo-400"/>
+          <div id="dowHint" class="text-[11px] mt-1 text-slate-400"></div>
         </div>
         <div class="col-span-6 sm:col-span-3">
           <label class="block text-sm mb-1 text-slate-300">Start (เช่น 08:00)</label>
@@ -47,7 +48,7 @@
         <div class="col-span-12 sm:col-span-4 flex flex-wrap items-end gap-3">
           <label class="inline-flex items-center gap-2">
             <input id="isHoliday" type="checkbox" class="h-4 w-4 accent-indigo-500">
-            <span class="text-sm text-slate-300">วันหยุด</span>
+            <span class="text-sm text-slate-300">วันหยุด (ติ๊กอัตโนมัติถ้า “อาทิตย์”)</span>
           </label>
           <div class="flex items-end gap-2">
             <div>
@@ -119,23 +120,18 @@
     let entries = [];   // {id, day, start, end, work, ot, week, isHoliday, breakHrs}
     let rowId = 1;
     const weekly = {1:0,2:0,3:0,4:0,5:0,6:0};
-    let showAll = false; // แสดง 5 รายการล่าสุดโดยค่าเริ่มต้น
+    let showAll = false;
 
     const monthSel = document.getElementById('month');
+    const dayInput = document.getElementById('day');
     const breakInput = document.getElementById('breakHrs');
     const holidayChk = document.getElementById('isHoliday');
+    const dowHint = document.getElementById('dowHint');
 
-    // enable/disable break box based on holiday checkbox
-    holidayChk.addEventListener('change', () => {
-      breakInput.disabled = !holidayChk.checked;
-      breakInput.classList.toggle('opacity-60', !holidayChk.checked);
-    });
-    breakInput.disabled = !holidayChk.checked;
-    breakInput.classList.toggle('opacity-60', !holidayChk.checked);
-
-    // ----- Utils -----
+    // ===== utils =====
     const fmt = n => (Math.round(n*100)/100).toFixed(2);
     const statusColor = v => v>24 ? "text-red-400" : "text-emerald-300";
+    const TH_DOW = ["อา","จ","อ","พ","พฤ","ศ","ส"]; // 0..6
     function storageKey(){
       const m = String(parseInt(monthSel.value,10)).padStart(2,'0');
       return `ot_daily_${YEAR}-${m}`;
@@ -149,24 +145,41 @@
     function parseTimeToHours(hhmm){ const [h,m] = hhmm.split(':').map(Number); return h + (m||0)/60; }
     function calcWorkHours(startStr, endStr){
       const s = parseTimeToHours(startStr), e = parseTimeToHours(endStr);
-      let diff = e - s; if (diff < 0) diff += 24; return diff; // cross midnight
+      let diff = e - s; if (diff < 0) diff += 24; return diff;
     }
     function weekOfMonth(year, month, day){
-      const first = new Date(year, month-1, 1), firstDow = first.getDay(); // 0=Sun
+      const first = new Date(year, month-1, 1), firstDow = first.getDay();
       return Math.floor((day + firstDow - 1) / 7) + 1;
     }
+    function isSunday(year, month, day){
+      const d = new Date(year, month-1, day);
+      return d.getDay() === 0;
+    }
+    function updateHolidayAuto(){
+      const d = parseInt(dayInput.value,10);
+      const m = parseInt(monthSel.value,10);
+      if(!d || d<1 || d>31) { dowHint.textContent=""; return; }
+      const dow = new Date(YEAR, m-1, d).getDay();
+      dowHint.textContent = `วัน${TH_DOW[dow]}`;
+      // auto-check if Sunday
+      const auto = (dow === 0);
+      holidayChk.checked = auto;
+      breakInput.disabled = !holidayChk.checked;
+      breakInput.classList.toggle('opacity-60', !holidayChk.checked);
+    }
+
     function rebuildWeekly(){
       for(let i=1;i<=6;i++) weekly[i]=0;
       entries.forEach(e => weekly[e.week] += e.ot);
     }
 
-    // ----- Render -----
+    // ===== render =====
     function renderEntries(){
       const body = document.getElementById("entriesBody");
       body.innerHTML = "";
       const m = parseInt(monthSel.value,10);
       const sorted = [...entries].sort((a,b)=>a.day-b.day);
-      const data = showAll ? sorted : sorted.slice(-5); // 5 ล่าสุด
+      const data = showAll ? sorted : sorted.slice(-5);
 
       data.forEach(e=>{
         const tr = document.createElement("tr");
@@ -206,7 +219,7 @@
       document.getElementById("totalLabel").textContent = fmt(total) + " h";
     }
 
-    // ----- Chart -----
+    // ===== chart =====
     let chart;
     function yMax(){
       const maxVal = Math.max(24, ...Object.values(weekly));
@@ -243,10 +256,20 @@
 
     function refresh(){ renderEntries(); renderTotals(); buildChart(); saveState(); }
 
-    // ----- Events -----
+    // ===== events =====
+    function syncHolidayByDate(){ updateHolidayAuto(); }
+    monthSel.addEventListener('change', ()=>{ loadState(); refresh(); syncHolidayByDate(); });
+    dayInput.addEventListener('input', syncHolidayByDate);
+
+    const breakInputEl = document.getElementById("breakHrs");
+    holidayChk.addEventListener('change', ()=>{
+      breakInputEl.disabled = !holidayChk.checked;
+      breakInputEl.classList.toggle('opacity-60', !holidayChk.checked);
+    });
+
     document.getElementById("addBtn").addEventListener("click", ()=>{
       const m = parseInt(monthSel.value,10);
-      const day = parseInt(document.getElementById("day").value,10);
+      const day = parseInt(dayInput.value,10);
       const start = document.getElementById("start").value;
       const end   = document.getElementById("end").value;
       const isHoliday = holidayChk.checked;
@@ -288,14 +311,8 @@
       URL.revokeObjectURL(url);
     });
 
-    document.getElementById("toggleView").addEventListener("click", ()=>{
-      showAll = !showAll; renderEntries();
-    });
-
-    monthSel.addEventListener('change', ()=>{ loadState(); refresh(); });
-
     // init
-    loadState(); refresh();
+    loadState(); refresh(); syncHolidayByDate();
   </script>
 </body>
 </html>
