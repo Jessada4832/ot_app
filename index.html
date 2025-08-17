@@ -93,8 +93,9 @@
         </div>
       </section>
 
-      <!-- Totals + Chart -->
+      <!-- Right column -->
       <section class="col-span-12 lg:col-span-5 space-y-6">
+        <!-- Weekly totals -->
         <div class="bg-slate-800/70 rounded-2xl border border-slate-700 p-4 md:p-6">
           <h2 class="text-lg font-semibold mb-3">Weekly Totals</h2>
           <div id="weeklyTotals" class="space-y-2"></div>
@@ -104,6 +105,20 @@
           </div>
         </div>
 
+        <!-- Payroll period total -->
+        <div class="bg-slate-800/70 rounded-2xl border border-slate-700 p-4 md:p-6">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold">Payroll OT (16 → 15)</h2>
+            <div id="payrollRange" class="text-xs text-slate-400"></div>
+          </div>
+          <div class="mt-3 flex items-center justify-between">
+            <div class="text-slate-300">รวม OT รอบเงินเดือนนี้</div>
+            <div id="payrollTotal" class="text-2xl font-bold text-emerald-300">0.00 h</div>
+          </div>
+          <div class="text-xs text-slate-500 mt-1">* คำนวณจากข้อมูลเดือนก่อน + เดือนที่เลือก</div>
+        </div>
+
+        <!-- Chart -->
         <div class="bg-slate-800/70 rounded-2xl border border-slate-700 p-4 md:p-6">
           <div class="flex items-center justify-between mb-2">
             <h2 class="text-lg font-semibold">Weekly OT Chart</h2>
@@ -132,16 +147,24 @@
     const fmt = n => (Math.round(n*100)/100).toFixed(2);
     const statusColor = v => v>24 ? "text-red-400" : "text-emerald-300";
     const TH_DOW = ["อา","จ","อ","พ","พฤ","ศ","ส"]; // 0..6
-    function storageKey(){
-      const m = String(parseInt(monthSel.value,10)).padStart(2,'0');
-      return `ot_daily_${YEAR}-${m}`;
+
+    function storageKey(y, m){
+      const mm = String(m).padStart(2,'0');
+      return `ot_daily_${y}-${mm}`;
     }
-    function saveState(){ localStorage.setItem(storageKey(), JSON.stringify(entries)); }
+    function keyForSelected(){ return storageKey(YEAR, parseInt(monthSel.value,10)); }
+    function prevMonth(y, m){ // m: 1..12 -> return {y, mPrev}
+      if (m === 1) return { y: y-1, m: 12 };
+      return { y, m: m-1 };
+    }
+
+    function saveState(){ localStorage.setItem(keyForSelected(), JSON.stringify(entries)); }
     function loadState(){
-      const raw = localStorage.getItem(storageKey());
+      const raw = localStorage.getItem(keyForSelected());
       entries = raw ? JSON.parse(raw) : [];
       rebuildWeekly();
     }
+
     function parseTimeToHours(hhmm){ const [h,m] = hhmm.split(':').map(Number); return h + (m||0)/60; }
     function calcWorkHours(startStr, endStr){
       const s = parseTimeToHours(startStr), e = parseTimeToHours(endStr);
@@ -161,7 +184,6 @@
       if(!d || d<1 || d>31) { dowHint.textContent=""; return; }
       const dow = new Date(YEAR, m-1, d).getDay();
       dowHint.textContent = `วัน${TH_DOW[dow]}`;
-      // auto-check if Sunday
       const auto = (dow === 0);
       holidayChk.checked = auto;
       breakInput.disabled = !holidayChk.checked;
@@ -171,6 +193,33 @@
     function rebuildWeekly(){
       for(let i=1;i<=6;i++) weekly[i]=0;
       entries.forEach(e => weekly[e.week] += e.ot);
+    }
+
+    // ===== Payroll OT (16 prev -> 15 this month) =====
+    function getEntriesFromStorage(y, m){
+      const key = storageKey(y, m);
+      try { return JSON.parse(localStorage.getItem(key)) || []; }
+      catch { return []; }
+    }
+    function calcPayrollForSelectedMonth(){
+      const mThis = parseInt(monthSel.value,10);
+      const { y: yPrev, m: mPrev } = prevMonth(YEAR, mThis);
+
+      const start = new Date(yPrev, mPrev-1, 16, 0, 0, 0);  // 16 of prev month
+      const end   = new Date(YEAR, mThis-1, 15, 23, 59, 59); // 15 of current month
+
+      // build arrays with date objects
+      const listPrev = getEntriesFromStorage(yPrev, mPrev).map(e => ({...e, _date: new Date(yPrev, mPrev-1, e.day)}));
+      const listThis = getEntriesFromStorage(YEAR, mThis).map(e => ({...e, _date: new Date(YEAR, mThis-1, e.day)}));
+      const all = listPrev.concat(listThis);
+
+      const inRange = all.filter(e => e._date >= start && e._date <= end);
+      const total = inRange.reduce((s, e) => s + (e.ot || 0), 0);
+
+      // UI
+      document.getElementById('payrollRange').textContent =
+        `${start.toLocaleDateString()} – ${end.toLocaleDateString()}`;
+      document.getElementById('payrollTotal').textContent = `${fmt(total)} h`;
     }
 
     // ===== render =====
@@ -254,17 +303,28 @@
       });
     }
 
-    function refresh(){ renderEntries(); renderTotals(); buildChart(); saveState(); }
+    function refresh(){ renderEntries(); renderTotals(); buildChart(); saveState(); calcPayrollForSelectedMonth(); }
 
     // ===== events =====
-    function syncHolidayByDate(){ updateHolidayAuto(); }
+    function syncHolidayByDate(){
+      const d = parseInt(dayInput.value,10);
+      const m = parseInt(monthSel.value,10);
+      if(!d || d<1 || d>31) { dowHint.textContent=""; return; }
+      const dow = new Date(YEAR, m-1, d).getDay();
+      dowHint.textContent = `วัน${TH_DOW[dow]}`;
+      // auto-check if Sunday
+      const auto = (dow === 0);
+      holidayChk.checked = auto;
+      breakInput.disabled = !holidayChk.checked;
+      breakInput.classList.toggle('opacity-60', !holidayChk.checked);
+    }
+
     monthSel.addEventListener('change', ()=>{ loadState(); refresh(); syncHolidayByDate(); });
     dayInput.addEventListener('input', syncHolidayByDate);
 
-    const breakInputEl = document.getElementById("breakHrs");
     holidayChk.addEventListener('change', ()=>{
-      breakInputEl.disabled = !holidayChk.checked;
-      breakInputEl.classList.toggle('opacity-60', !holidayChk.checked);
+      breakInput.disabled = !holidayChk.checked;
+      breakInput.classList.toggle('opacity-60', !holidayChk.checked);
     });
 
     document.getElementById("addBtn").addEventListener("click", ()=>{
@@ -309,6 +369,11 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url; a.download = `ot_daily_${YEAR}-${m}.csv`; a.click();
       URL.revokeObjectURL(url);
+    });
+
+    document.getElementById("toggleView").addEventListener("click", ()=>{
+      showAll = !showAll; renderEntries();
+      // ไม่ต้องบันทึก state เพื่อให้กลับมา default = 5 ล่าสุดเวลารีเฟรช
     });
 
     // init
